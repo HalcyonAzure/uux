@@ -5692,6 +5692,7 @@ dependencies = [
  "directories",
  "eframe",
  "ffmpeg-next",
+ "ffmpeg-sys-next",
  "flate2",
  "futures-util",
  "hex",

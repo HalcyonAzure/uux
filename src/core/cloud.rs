@@ -34,6 +34,14 @@ pub fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
+#[cfg(target_os = "macos")]
+pub fn state_directory() -> PathBuf {
+    // ~/Library/Application Support/UUX; XDG_STATE_HOME still overrides.
+    std::env::var_os("XDG_STATE_HOME")
+        .map(|p| PathBuf::from(p).join("uu-linux"))
+        .unwrap_or_else(|| directories::BaseDirs::new().unwrap().data_dir().join("UUX"))
+}
+#[cfg(not(target_os = "macos"))]
 pub fn state_directory() -> PathBuf {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -424,9 +432,43 @@ impl Cloud {
             })
             .unwrap_or(0)
             / 1024;
-        let data = json!({"name":read("/proc/sys/kernel/hostname"),"client_id":identity,"system_id":identity,
-            "machine_guid":read("/etc/machine-id"),"os":format!("Linux {}",read("/proc/sys/kernel/osrelease")),
-            "base_board":read("/sys/class/dmi/id/board_name"),"cpu":cpu,"video":[],"mac":"","screen":"",
+        #[cfg(not(target_os = "macos"))]
+        let (name, machine_guid, os, board) = (
+            read("/proc/sys/kernel/hostname"),
+            read("/etc/machine-id"),
+            format!("Linux {}", read("/proc/sys/kernel/osrelease")),
+            read("/sys/class/dmi/id/board_name"),
+        );
+        // macOS has no /proc or machine-id. The random install identity stands in
+        // for machine_guid so no hardware serial or UUID leaves the Mac.
+        #[cfg(target_os = "macos")]
+        let (name, machine_guid, os, board, cpu, memory) = {
+            let _ = (&cpu, memory);
+            let run = |program: &str, args: &[&str]| {
+                std::process::Command::new(program)
+                    .args(args)
+                    .output()
+                    .ok()
+                    .filter(|o| o.status.success())
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default()
+            };
+            (
+                run("/usr/sbin/scutil", &["--get", "ComputerName"]),
+                identity.clone(),
+                format!("macOS {}", run("/usr/bin/sw_vers", &["-productVersion"])),
+                run("/usr/sbin/sysctl", &["-n", "hw.model"]),
+                run("/usr/sbin/sysctl", &["-n", "machdep.cpu.brand_string"]),
+                run("/usr/sbin/sysctl", &["-n", "hw.memsize"])
+                    .parse::<u64>()
+                    .unwrap_or(0)
+                    / 1024
+                    / 1024,
+            )
+        };
+        let data = json!({"name":name,"client_id":identity,"system_id":identity,
+            "machine_guid":machine_guid,"os":os,
+            "base_board":board,"cpu":cpu,"video":[],"mac":"","screen":"",
             "memory":memory,"platform":1,"controllable":false});
         let result = self
             .request(

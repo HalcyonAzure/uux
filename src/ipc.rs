@@ -26,9 +26,10 @@ pub fn directory(state: Option<&Path>) -> Result<PathBuf> {
     let dir = path.join("runtime");
     std::fs::create_dir_all(&dir)?;
     std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
-    // sockaddr_un has a small platform-specific limit.
+    // sockaddr_un has a small platform-specific limit (104 on macOS, 108 on Linux).
+    const SUN_PATH: usize = if cfg!(target_os = "macos") { 104 } else { 108 };
     ensure!(
-        dir.as_os_str().len() + 16 < 108,
+        dir.as_os_str().len() + 16 < SUN_PATH,
         "状态目录路径太长，无法创建本地服务套接字"
     );
     Ok(dir)
