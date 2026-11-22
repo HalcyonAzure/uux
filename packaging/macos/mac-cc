@@ -1,0 +1,2 @@
+#!/bin/sh
+exec clang --target=arm64-apple-macos13.0 -isysroot /opt/osx/MacOSX26.5.sdk -fuse-ld=lld -mmacos-version-min=13.0 "$@"
