@@ -1014,6 +1014,8 @@ pub fn run(state: Option<&Path>) -> Result<()> {
     Ok(())
 }
 fn serve(mut stream: UnixStream, hub: Shared) -> Result<()> {
+    // BSD/macOS accept() inherits O_NONBLOCK from the listener; Linux does not.
+    stream.set_nonblocking(false)?;
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
     let request = ipc::read(&mut stream)?;

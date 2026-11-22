@@ -101,6 +101,19 @@ fn system_family() -> String {
     "sans-serif".into()
 }
 
+/// macOS has no fontconfig; use the CJK system faces that ship with every install.
+#[cfg(target_os = "macos")]
+fn font(pattern: &str) -> Option<egui::FontData> {
+    let (path, index) = if pattern.contains("weight=bold") {
+        ("/System/Library/Fonts/Hiragino Sans GB.ttc", 1)
+    } else {
+        ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0)
+    };
+    let mut data = egui::FontData::from_owned(std::fs::read(path).ok()?);
+    data.index = index;
+    Some(data)
+}
+#[cfg(not(target_os = "macos"))]
 fn font(pattern: &str) -> Option<egui::FontData> {
     let resolved = output("fc-match", &["-f", "%{file}\n%{index}\n", pattern])?;
     let mut lines = resolved.lines();
@@ -112,10 +125,14 @@ fn font(pattern: &str) -> Option<egui::FontData> {
 pub fn setup(ctx: &egui::Context) {
     let family = system_family();
     let mut fonts = egui::FontDefinitions::default();
-    for (name, pattern) in [
+    #[cfg(target_os = "macos")]
+    let faces = [("system-ui", family.clone())];
+    #[cfg(not(target_os = "macos"))]
+    let faces = [
         ("system-ui", family.clone()),
         ("system-ui-cjk", "sans-serif:lang=zh".into()),
-    ] {
+    ];
+    for (name, pattern) in faces {
         if let Some(data) = font(&pattern) {
             fonts.font_data.insert(name.into(), data.into());
         }

@@ -237,6 +237,9 @@ fn rename_no_replace(from: &Path, to: &Path) -> std::io::Result<()> {
     let to = std::ffi::CString::new(to.as_os_str().as_bytes())?;
     // Linux renameat2 atomically rejects files, directories and symlinks already
     // at the destination; a prior exists() check would leave a replacement race.
+    #[cfg(target_os = "macos")]
+    let result = unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_EXCL) };
+    #[cfg(not(target_os = "macos"))]
     let result = unsafe {
         libc::renameat2(
             libc::AT_FDCWD,

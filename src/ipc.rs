@@ -68,6 +68,15 @@ pub fn read(stream: &mut UnixStream) -> Result<Value> {
     stream.read_exact(&mut bytes)?;
     Ok(serde_json::from_slice(&bytes)?)
 }
+#[cfg(target_os = "macos")]
+pub fn peer_is_owner(stream: &UnixStream) -> bool {
+    let mut uid: libc::uid_t = 0;
+    let mut gid: libc::gid_t = 0;
+    unsafe {
+        libc::getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) == 0 && uid == libc::geteuid()
+    }
+}
+#[cfg(not(target_os = "macos"))]
 pub fn peer_is_owner(stream: &UnixStream) -> bool {
     let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
     let mut len = std::mem::size_of::<libc::ucred>() as libc::socklen_t;

@@ -13,6 +13,10 @@ mod network;
 pub(crate) mod pixels;
 mod playback;
 pub mod ports;
+#[cfg(target_os = "linux")]
+pub mod pulse_audio;
+#[cfg(not(target_os = "linux"))]
+#[path = "pulse_audio_stub.rs"]
 pub mod pulse_audio;
 pub mod repair;
 pub mod runtime;

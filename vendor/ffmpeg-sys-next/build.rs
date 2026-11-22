@@ -1296,8 +1296,8 @@ fn main() {
                 "AppKit",
                 "OpenCL",
                 "OpenGL",
-                "QTKit",
-                "VideoDecodeAcceleration",
+                // QTKit / VideoDecodeAcceleration are x86_64-only legacy stubs;
+                // linking them breaks arm64 builds and VideoToolbox replaces them.
             ];
             for f in &macos_frameworks {
                 println!("cargo:rustc-link-lib=framework={f}");

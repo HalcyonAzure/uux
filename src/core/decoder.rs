@@ -4,6 +4,11 @@ use ffmpeg_next::{self as ffmpeg, ffi};
 use serde_json::{Value, json};
 use std::{ffi::CStr, ptr};
 
+#[cfg(target_os = "macos")]
+pub fn preferences() -> [&'static str; 3] {
+    ["auto", "software", "videotoolbox"]
+}
+#[cfg(not(target_os = "macos"))]
 pub fn preferences() -> [&'static str; 4] {
     ["auto", "software", "vaapi", "cuda"]
 }
@@ -95,7 +100,11 @@ impl Decoder {
         ensure!(preferences().contains(&preference), "本地解码偏好无效");
         let mut failures = Vec::new();
         let choices: &[&'static str] = match preference {
+            #[cfg(target_os = "macos")]
+            "auto" => &["videotoolbox"],
+            #[cfg(not(target_os = "macos"))]
             "auto" => &["vaapi", "cuda"],
+            "videotoolbox" => &["videotoolbox"],
             "vaapi" => &["vaapi"],
             "cuda" => &["cuda"],
             _ => &[],
@@ -122,10 +131,10 @@ impl Decoder {
         });
         context.set_flags(ffmpeg::codec::Flags::LOW_DELAY);
         if backend != "software" {
-            let kind = if backend == "vaapi" {
-                ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI
-            } else {
-                ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA
+            let kind = match backend {
+                "vaapi" => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VAAPI,
+                "videotoolbox" => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+                _ => ffi::AVHWDeviceType::AV_HWDEVICE_TYPE_CUDA,
             };
             unsafe {
                 let mut supported = false;
