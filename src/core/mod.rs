@@ -13,6 +13,7 @@ mod network;
 pub(crate) mod pixels;
 mod playback;
 pub mod ports;
+pub mod keymap;
 #[cfg(target_os = "linux")]
 pub mod pulse_audio;
 #[cfg(not(target_os = "linux"))]

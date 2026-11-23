@@ -47,6 +47,21 @@ use webrtc::{
 const CONTROL: &str = "CONTROL_DATA_CHANNEL";
 const TEXT: &str = "TEXT_DATA_CHANNEL";
 
+/// Device-list platform of a bound or shared device (1 Windows, 4 macOS).
+async fn host_platform(cloud: &Cloud, id: &str) -> Option<i64> {
+    let raw = tokio::time::timeout(Duration::from_secs(5), cloud.devices())
+        .await
+        .ok()?
+        .ok()?;
+    ["my_binded_devices", "others_shared_devices"]
+        .into_iter()
+        .filter_map(|group| raw[group].as_array())
+        .flatten()
+        .map(|item| item.get("device").unwrap_or(item))
+        .find(|device| device["device_id"].as_str() == Some(id))
+        .and_then(|device| device["platform"].as_i64())
+}
+
 fn startup_ready(
     wait_video: bool,
     probed: bool,
@@ -185,6 +200,8 @@ pub struct Session {
     read_only: bool,
     clipboard_wire: super::clipboard_wire::ClipboardData,
     keys: BTreeSet<u16>,
+    /// The host is macOS (device platform 4); key codes are sent as kVK values.
+    mac_host: bool,
     buttons: BTreeSet<u8>,
     touches: BTreeSet<u32>,
     touch_supported: Option<bool>,
@@ -260,6 +277,7 @@ impl Session {
             drag_receive: false,
             download_dir: Default::default(),
             keys: BTreeSet::new(),
+            mac_host: false,
             buttons: BTreeSet::new(),
             touches: BTreeSet::new(),
             touch_supported: None,
@@ -338,6 +356,21 @@ impl Session {
         }
         settings["assistance"] = json!(matches!(target, super::cloud::Target::Assistance { .. }));
         self.assistance = settings["assistance"].as_bool().unwrap_or(false);
+        // A macOS host expects macOS key codes; Windows hosts expect virtual keys.
+        // The device list reports platform 4 for Mac. Assistance targets are not
+        // in the list and keep Windows codes unless settings name the platform.
+        let platform = match settings["host_platform"].as_i64() {
+            Some(platform) => Some(platform),
+            None => match &target {
+                super::cloud::Target::Device(id) => host_platform(&cloud, id).await,
+                _ => None,
+            },
+        };
+        self.mac_host = platform == Some(4);
+        self.output.native(
+            "host_platform",
+            json!({"platform":platform,"mac_keycodes":self.mac_host}),
+        );
         self.lock_on_disconnect = settings["lock_on_disconnect"].as_bool().unwrap_or(false);
         self.local_files_allowed = settings["allow_files"].as_bool().unwrap_or(true);
         self.read_only = settings["read_only"].as_bool().unwrap_or(false);
@@ -1981,11 +2014,13 @@ impl Session {
     }
     async fn paste_keys(&mut self) -> Result<()> {
         self.release_inputs().await;
+        // Ctrl+V on Windows hosts, Command+V on macOS hosts.
+        let (modifier, v) = if self.mac_host { (0x37, 0x09) } else { (17, 86) };
         for (action, key) in [
-            ("kbd_press", 17),
-            ("kbd_press", 86),
-            ("kbd_release", 86),
-            ("kbd_release", 17),
+            ("kbd_press", modifier),
+            ("kbd_press", v),
+            ("kbd_release", v),
+            ("kbd_release", modifier),
         ] {
             self.send_control(json!({"action":action,"key":key}).to_string().into_bytes())
                 .await?;
@@ -2378,10 +2413,18 @@ impl Session {
                 return Ok(());
             }
             "down" | "up" => {
-                let key = command["key"]
+                let vk = command["key"]
                     .as_u64()
                     .filter(|k| (1..=255).contains(k))
                     .context("键码无效")? as u16;
+                let key = if self.mac_host {
+                    match super::keymap::mac_keycode(vk) {
+                        Some(code) => code,
+                        None => return Ok(()),
+                    }
+                } else {
+                    vk
+                };
                 if op == "down" {
                     self.keys.insert(key);
                 } else {
